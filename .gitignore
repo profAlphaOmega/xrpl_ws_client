@@ -1,0 +1,4 @@
+/node_modules
+*.pyc
+.vscode
+__pycache__
