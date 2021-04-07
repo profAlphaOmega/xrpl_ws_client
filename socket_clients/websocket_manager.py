@@ -3,7 +3,7 @@ import time
 from threading import Thread, Lock
 from websocket import WebSocketApp
 
-from server.logger import logger
+from logger import logger
 
 
 class WebsocketManager:
