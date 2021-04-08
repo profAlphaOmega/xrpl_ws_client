@@ -29,7 +29,6 @@ def Main():
         xrpl = XRPLWebsocketClient(stream_url='wss://s.altnet.rippletest.net:51233')
         sleep(1)
         
-        # xrpl.connect()
         logger.info('Opening Ping\n')
         xrpl.ping()
         sleep(3)
