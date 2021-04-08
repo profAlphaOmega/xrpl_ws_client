@@ -5,8 +5,9 @@
 ### This client does not contain any signing methods
 ### There is an official python xrpl http library that you can use in conjunction: https://xrpl.org/get-started-using-python.html
 
+This client does not have all of the API commands, not by a longshot. It is meant to give you an overall framework to bootstrap from and connect you to the XRPL via websocket. 
 
-
+Check out the full list of Websocket API commands at: https://xrpl.org/websocket-api-tool.html
 
 
 To get started clone the repo
@@ -54,11 +55,7 @@ The current configuration is setup to:
 After that the client will run forever listening to messages
 
 
-This client does not have all of the API commands, not by a longshot. It is meant to give you an overall framework to bootstrap from and connect you to the XRPL via websocket. 
-
-One important thing to note is that this client does not handle signing transactions. To do that securly, read the docs and see how the websocket api handles it, or use the official xrpl-py client.
-
-Current command list is
+Current command list is:
 
 ```
 > ping
