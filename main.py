@@ -14,10 +14,15 @@ def Main():
     Current setup
     - Constructs Client
     - Sends opening ping for fun
+    - Requests a random number
+    - Gets an accounts info
+    - Gets any issued currencies the account may have
+    - Requests and order book
     - Subscribes to ledger closes and an testnet account
-    - Incoming messages will be upon every ledger close and '
+    - Incoming messages will be upon every ledger close and
         when the testnet account receives a transaction
-    - Test sending some test xrp to the account to see the message
+    - After you have subscribed to the account,
+        Test sending some test xrp to the account to see the message
         https://xrpl.org/tx-sender.html
     '''
     try:
@@ -35,15 +40,31 @@ def Main():
         sleep(3)
 
         logger.info('What is my account information?\n')
-        xrpl.account_info({'account': 'rEcZh4Uhe1i5PSyGiJ6vFBhTvq7rXRy2s6'})
+        xrpl.account_info({'account': 'rLL8fVwvGU3MB9WsJci4nv1K1iEY3tx8T3'})
         sleep(3)
         
         logger.info('What what Issued Currency do I have?\n')
-        xrpl.account_lines({'account': 'rEcZh4Uhe1i5PSyGiJ6vFBhTvq7rXRy2s6'})
+        xrpl.account_lines({'account': 'rLL8fVwvGU3MB9WsJci4nv1K1iEY3tx8T3'})
         sleep(3)
         
-        logger.info('Subscribe to LedgerClosed Stream\n')
-        xrpl.subscribe(dict(streams=['ledger'], accounts=['rEcZh4Uhe1i5PSyGiJ6vFBhTvq7rXRy2s6']))
+        logger.info('Request an USD:XRP Order book')
+        book = {
+                "id": 4,
+                "command": "book_offers",
+                "taker_gets": {
+                    "currency": "XRP"
+                },
+                "taker_pays": {
+                    "currency": "USD",
+                    "issuer": "rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B"
+                },
+                "limit": 10
+            }
+        xrpl.book_offers(book)
+        sleep(3)
+        
+        logger.info('Subscribe to LedgerClosed and Account Streams\n')
+        xrpl.subscribe(dict(streams=['ledger'], accounts=['rLL8fVwvGU3MB9WsJci4nv1K1iEY3tx8T3']))
         sleep(1)
         logger.info('Bring on the messages!')
         sleep(2)
@@ -54,7 +75,7 @@ def Main():
             pass
     finally:
         # run any cleanup code you want
-        logger.info("Socket Closed")
+        xrpl.unsubscribe_all()
 
 
 

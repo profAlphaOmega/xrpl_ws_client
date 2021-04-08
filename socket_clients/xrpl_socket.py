@@ -21,13 +21,13 @@ class XRPLWebsocketClient(WebsocketManager):
         - Default url set to the testnet
 
         - If you make an On-Demand API call the message id and handler gets 
-            stored in the _response_queue to be processed from a server response
+            stored in the `self._response_queue` to be processed from the server response
 
         - By On-Demand I mean messages that don't come from a subscription stream
             but rather ones you make and are expecting a one-time response from the server
 
         - All other messages are more than likely subscription streams messages
-            that are handled in the _on_message handler
+            that are handled in the `self._on_message` handler
 
     '''
     
@@ -86,29 +86,32 @@ class XRPLWebsocketClient(WebsocketManager):
     # When the Client Connects
     def _on_open(self, ws):
         '''
-        Whenver the XPRL connection is made, this code runs
+        Whenever the XPRL connection is made, this code runs
         '''
         logger.info(f"{self.__FEED} Connected! ")
+        return
 
 
     # All Messages Route through here
     def _on_message(self, ws, raw_message: str) -> None:
         '''
-        - Handles All Messages from Socket
+        - Handles All Messages from the Server
         - Messages are handled in cascading order
-        
-        - On-Demand message responses are identified with 'type' == 'response'
         - Any time you send an API call you send an ID message with it, 
-          and store the id and its handler in the self._response_queue
-        - When the server response it sends you a message with the same id you sent it
-        - The ID then gets looked up from your self._response_queue and its respective handler is run 
-        
+            and store the ID and its handler in the self._response_queue
+        - When the server responds to your message, it sends you a message with the same ID you sent it
+        - The ID then gets looked up from your `self._response_queue` and its respective handler is run 
         - Subscription messages will come in with a 'type' == 'transaction' or 'ledgerClosed'
         '''
 
         # self.stale_response_queue_check()
 
         message = json.loads(raw_message) # Load it up
+
+        if 'error' in message:
+            # Handler errors here
+            logger.error(f'Error: {message}')
+            return
 
         if message.get('type') == 'response':
             if 'id' in message:
@@ -250,24 +253,23 @@ class XRPLWebsocketClient(WebsocketManager):
 
     def unsubscribe_all(self) -> None:
         '''
+        https://xrpl.org/unsubscribe.html
         Unsubscribes to all current subscriptions in your local list
         '''
+        
         payload = dict(command = 'unsubscribe', id = utils.generate_uuid())
         for sub in self._subscriptions:
-            payload.update(sub)
+            payload.update({sub['type'] : [sub['stream']]})
 
         self.send_json(payload)
+        payload["handler"] = self.__unsubscribe_response
+        self._response_queue.update({payload["id"]: payload})
 
         # Remove the subscriptions from your local list
         for sub in self._subscriptions:
             while sub in self._subscriptions:
                 self._subscriptions.remove(sub)
 
-
-    def unsubscribe(self, subscription) -> None:
-        payload = dict(command = 'unsubscribe', id = utils.generate_uuid())
-        payload.update(subscription)
-        self._subscriptions.remove(subscription)
 
 
     def account_info(self, req: Dict) -> None:
@@ -279,7 +281,7 @@ class XRPLWebsocketClient(WebsocketManager):
 
         >>> self.account_info({account : 'rf1BiGeXwwQoi8Z2ueFYTEXSwuJYfV2Jpn'})
         
-        Response from self.__account_info_response()
+        See `self.__account_info_response` for example response
         
 
         '''
@@ -287,10 +289,10 @@ class XRPLWebsocketClient(WebsocketManager):
         payload = dict(command='account_info', ledger_index='current', queue=True, strict=True)
 
         if not 'account' in req:
-            raise KeyError('account required')
+            raise KeyError('`account` field required')
         
         if not 'id' in req:
-            _id = utils.generate_uuid(f'account_info')
+            _id = utils.generate_uuid('account_info')
             payload['id'] = _id
         
         payload.update(req)
@@ -311,12 +313,12 @@ class XRPLWebsocketClient(WebsocketManager):
         Example:
             >>> self.account_lines({address : 'rf1BiGeXwwQoi8Z2ueFYTEXSwuJYfV2Jpn'})
 
-            Response from self.__account_lines_response()
+            See `self.__account_lines_response` for example response
             
 
         '''
         if not 'account' in req:
-            raise KeyError('address required')
+            raise KeyError('`account` field required')
 
         payload = dict(command='account_lines', ledger_index='validated')
         if not 'id' in req:
@@ -429,7 +431,7 @@ class XRPLWebsocketClient(WebsocketManager):
             "type": "response"
         }
         '''
-        logger.info(f'Ping Resolved: {res}')
+        logger.info(f'Random Message Resolved: {res}')
 
 
     def __ledger_stream_response(self, message):
@@ -468,6 +470,16 @@ class XRPLWebsocketClient(WebsocketManager):
 
         '''
         logger.info(f'Subscribed: {d}')
+        return
+    
+    def __unsubscribe_response(self, d):
+        '''
+        One time handler to confirm subscription was confirmed
+        All other messages will come from the greater event handler
+        See docs for relevant payloads: https://xrpl.org/subscribe.html
+
+        '''
+        logger.info(f'Unsubscribed: {d}')
         return
 
 
@@ -537,12 +549,8 @@ class XRPLWebsocketClient(WebsocketManager):
             }
         '''
         try:
-            logger.info(f'Response: {res}')
+            logger.info(f'Order Book: {res}')
             
-            # If you want to look at all the offers in a book you can do something like...
-            # offers = res['result']['offers']
-            # for offer in offers:
-            #     self.parse_book_offer(offer)
 
         except Exception as e:
             logger.error(f"{repr(e)}")
@@ -586,7 +594,7 @@ class XRPLWebsocketClient(WebsocketManager):
             "type": "response"
         }
         '''
-        logger.info(f'account response: {message}')
+        logger.info(f'Account Info Response: {message}')
         account_data = message['result']['account_data']
         return
 
@@ -634,66 +642,5 @@ class XRPLWebsocketClient(WebsocketManager):
         }
         '''
 
-        account = message['result']['account']
-        lines = message['result']['lines']
+        logger.info(f'Account Lines: {message}')
         return
-
-
-
-
-    def parse_book_offer(self, offer) -> Dict:
-        '''
-        Just a helper function to parse an order book
-        There is no standard for this and use it as you see fit
-
-        Description: 
-            Parses a SINGLE Offer Object
-        
-
-        '''
-        result = dict()
-        
-        taker_gets = offer['TakerGets']
-        taker_pays = offer['TakerPays']
-        # Parse Currencies
-        if type(taker_gets) is str:
-            gets_currency = 'XRP'
-            gets_amount = float(taker_gets) / 1000000
-            gets_issuer = 'XRPL'
-        else:
-            gets_currency = taker_gets['currency']
-            gets_amount = float(taker_gets['value'])
-            gets_issuer = taker_gets['issuer']
-
-        if type(taker_pays) is str:
-            pays_currency = 'XRP'
-            pays_amount = float(taker_pays) / 1000000
-            pays_issuer = 'XRPL'
-        else:
-            pays_currency = taker_pays['currency']
-            pays_amount = float(_taker_pays['value'])
-            pays_issuer = taker_pays['issuer']
-
-        quality = float(offer['quality'])  
-        if 'XRP' == gets_currency:
-            quality *= 1000000 # Convert from drops to normalized scale
-        if 'XRP' == pays_currency:
-            quality /= 1000000 # Convert from drops to normalized scale
-        
-        rate = 1 / quality
-
-        result = {
-            'taker_gets' : taker_gets,
-            'get_currency' : gets_currency,
-            'gets_issuer' : gets_issuer,
-            'taker_pays' : taker_pays,
-            'pays_currency' : pays_currency,
-            'pays_issuer' : pays_issuer,
-            'quality' : quality,
-            'rate' : rate
-        }
-        
-        # quailty is how many units of taker_pays is needed to get 1 unit of taker_gets
-        # rate is how many units of taker_gets you get for 1 unity of taker_pays
-        
-        return result
