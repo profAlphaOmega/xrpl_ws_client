@@ -1,7 +1,7 @@
 import json
 import time
 import random
-from typing import DefaultDict, Deque, List, Dict, Tuple, Optional
+from typing import List, Dict
 
 from socket_clients.websocket_manager import WebsocketManager
 from commons import utils
@@ -11,19 +11,23 @@ from logger import logger
 
 class XRPLWebsocketClient(WebsocketManager):
     '''
-    - API Docs:https://xrpl.org/websocket-api-tool.html
+    XRPL API Docs: https://xrpl.org/websocket-api-tool.html
     
-    - Websocket Client to interface with the XRPL
-    - This client was meant to be a start at a python implementation of:
-    https://xrpl.org/monitor-incoming-payments-with-websocket.html
+    Summary:
+        - Websocket Client to interface with the XRPL
+        - This client was meant to be a start at a python implementation of:
+            https://xrpl.org/monitor-incoming-payments-with-websocket.html
     
-    - Default url set to the testnet
+        - Default url set to the testnet
 
-    - If you make an On-Demand API call the message id and handler gets 
-    stored in the _response_queue to be processed from a server response
+        - If you make an On-Demand API call the message id and handler gets 
+            stored in the _response_queue to be processed from a server response
 
-    - All other messages are more than likely subscription streams messages
-    that are handled in the _on_message handler
+        - By On-Demand I mean messages that don't come from a subscription stream
+            but rather ones you make and are expecting a one-time response from the server
+
+        - All other messages are more than likely subscription streams messages
+            that are handled in the _on_message handler
 
     '''
     
@@ -32,17 +36,13 @@ class XRPLWebsocketClient(WebsocketManager):
     __STREAM_URL = 'wss://s.altnet.rippletest.net:51233'
 
     def __init__(self, stream_url=__STREAM_URL) -> None:
-        super().__init__('XRPL_WS')
+        super().__init__(socket_name = 'XRPL_WS')
         self.stream_url = stream_url
         self.feed = self.__FEED
         self.feed_type = self.__FEED_TYPE
-        self._reset_data()
+        self._subscriptions: List = list()
+        self._response_queue = dict()
 
-
-    def _reset_data(self) -> None:
-        self._subscriptions: List = []
-        self._response_queue: Dict = {}
-        logger.info("Data Resetted")
 
     def _get_url(self) -> str:
         '''
@@ -52,10 +52,11 @@ class XRPLWebsocketClient(WebsocketManager):
         return self.stream_url
 
     
+# Helper Functions---------------------------------------------------------------------------------
     def stale_response_queue_check(self):
         '''
         Just in case your messages some how drop or were improperly sent.
-        You can define a time for them to remain in your queue.
+        You can define a duration for them to remain in your queue.
 
         This is an optional method and is commented out by default in the `_on_message` handler
         '''
@@ -67,6 +68,7 @@ class XRPLWebsocketClient(WebsocketManager):
                 stale_list.append(_id)
         for _id in stale_list:
             del self._response_queue[_id]
+
 
     def response_queue_add(self, payload):
         '''
@@ -81,31 +83,38 @@ class XRPLWebsocketClient(WebsocketManager):
 
 
 # Socket Handlers---------------------------------------------------------------------------------
+    # When the Client Connects
     def _on_open(self, ws):
         '''
         Whenver the XPRL connection is made, this code runs
         '''
-        logger.info(f"Connected --> ")
-        self._reset_data()
+        logger.info(f"{self.__FEED} Connected! ")
 
-    # Message Routing by Type---------------------------------------------------------------------------------
+
+    # All Messages Route through here
     def _on_message(self, ws, raw_message: str) -> None:
         '''
         - Handles All Messages from Socket
         - Messages are handled in cascading order
+        
+        - On-Demand message responses are identified with 'type' == 'response'
+        - Any time you send an API call you send an ID message with it, 
+          and store the id and its handler in the self._response_queue
+        - When the server response it sends you a message with the same id you sent it
+        - The ID then gets looked up from your self._response_queue and its respective handler is run 
+        
+        - Subscription messages will come in with a 'type' == 'transaction' or 'ledgerClosed'
         '''
 
         # self.stale_response_queue_check()
 
         message = json.loads(raw_message) # Load it up
 
-        
         if message.get('type') == 'response':
-            # On-Demand messages are handled here via response handler methods
             if 'id' in message:
                 # Found in _response_queue?
                 try:
-                    self._handle_response(self._response_queue[message['id']]["handler"](message))
+                    self.__handle_response(self._response_queue[message['id']]["handler"](message))
                     del self._response_queue[message['id']]
                     return
                 except KeyError:
@@ -163,7 +172,6 @@ class XRPLWebsocketClient(WebsocketManager):
 
             see self.__random_response() for sample response
             
-
         '''
         
         payload = dict()
@@ -184,15 +192,16 @@ class XRPLWebsocketClient(WebsocketManager):
         '''
         Docs: 
             https://xrpl.org/subscribe.html
+
         Description: 
             Subscribe to a stream
             There are 3 types of subscriptions as defined in the docs
                 accounts, order book, and ledger
             
-            This method will generate the id and command for you
-                but follow the docs to see how each subscription type is formatted
+            This method will generate the id and command fields for you
+                but follow the docs to see how each subscription payload is formatted
 
-            After subscribing on the XPRL, it will add it to your local list of subscriptions (self._subscriptions)
+            After subscribing, the client will add it to its local list of subscriptions (self._subscriptions)
             The response handler in this case, `self.__subscription_response`, only handles the confirmation message
             All other subscription messages are handled by their `type` field in the response message
 
@@ -214,13 +223,13 @@ class XRPLWebsocketClient(WebsocketManager):
 
         '''
 
-        if not sub.get('id', ''):
-            _id = utils.generate_uuid()
-        
-        payload = dict(id=_id, command='subscribe')
-        payload.update(sub)
-        
         try:
+            if not sub.get('id'):
+                _id = utils.generate_uuid()
+            
+            payload = dict(id=_id, command='subscribe')
+            payload.update(sub)
+        
             self.send_json(payload)
             payload["handler"] = self.__subscription_response
             self._response_queue.update({payload["id"]: payload})
@@ -248,6 +257,7 @@ class XRPLWebsocketClient(WebsocketManager):
             payload.update(sub)
 
         self.send_json(payload)
+
         # Remove the subscriptions from your local list
         for sub in self._subscriptions:
             while sub in self._subscriptions:
@@ -280,7 +290,7 @@ class XRPLWebsocketClient(WebsocketManager):
             raise KeyError('account required')
         
         if not 'id' in req:
-            _id = utils.generate_uuid(f'account_info: {address}')
+            _id = utils.generate_uuid(f'account_info')
             payload['id'] = _id
         
         payload.update(req)
@@ -381,7 +391,7 @@ class XRPLWebsocketClient(WebsocketManager):
 
 
 # Response Handlers --------------------------------------------------------------------------------
-    def _handle_response(self, f):
+    def __handle_response(self, f):
         '''
         On Demand Response Wrapper
         Used for handling Ping checks and other On Demand Messages sent with an ID
@@ -529,7 +539,7 @@ class XRPLWebsocketClient(WebsocketManager):
         try:
             logger.info(f'Response: {res}')
             
-            # If you to look at all the offers in a book you can do something like...
+            # If you want to look at all the offers in a book you can do something like...
             # offers = res['result']['offers']
             # for offer in offers:
             #     self.parse_book_offer(offer)

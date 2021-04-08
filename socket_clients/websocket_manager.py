@@ -38,7 +38,6 @@ class WebsocketManager:
 
     def _connect(self):
         assert not self.ws, "ws should be closed before attempting to connect"
-        logger.info("Connecting...")
         self.ws = WebSocketApp(
             self._get_url(),
             on_open=self._wrap_callback(self._on_open),
