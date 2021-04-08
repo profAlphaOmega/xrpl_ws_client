@@ -41,7 +41,7 @@ def Main():
         xrpl.account_info({'account': 'rLL8fVwvGU3MB9WsJci4nv1K1iEY3tx8T3'})
         sleep(3)
         
-        logger.info('What what Issued Currency do I have?\n')
+        logger.info('What Issued Currencies do I have?\n')
         xrpl.account_lines({'account': 'rLL8fVwvGU3MB9WsJci4nv1K1iEY3tx8T3'})
         sleep(3)
         
